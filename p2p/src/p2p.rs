@@ -104,10 +104,7 @@ impl Context {
                                  ()
                              });
 
-                context
-                    .pool
-                    .clone()
-                    .spawn(future)
+                context.pool.clone().spawn(future)
             })
     }
 
@@ -173,10 +170,7 @@ impl Context {
                         ()
                     });
 
-                context
-                    .pool
-                    .clone()
-                    .spawn(future)
+                context.pool.clone().spawn(future)
             })
     }
 
@@ -244,10 +238,7 @@ impl Context {
                         ()
                     });
 
-                context
-                    .pool
-                    .clone()
-                    .spawn(future)
+                context.pool.clone().spawn(future)
             })
     }
 
@@ -286,7 +277,7 @@ impl Context {
         context
             .inbound_sync_connections
             .write()
-            .insert(addr.clone(), in_sync);
+            .insert(addr.clone(), in_sync.clone());
 
         let command_stream = context
             .command_streams
@@ -296,14 +287,27 @@ impl Context {
             .unwrap();
 
         if context.config.peer_id != request.node_data.peer_id && request.node_data.my_port != 0 {
-            // TODO: check if peer responds to ping and insert to context.peerlist
-            unimplemented!();
+            Context::try_ping(context.clone(), &addr);
         }
 
         command_stream.invoke::<RequestSupportFlags, _>(Section::new(), {
-            |_response: Section| {
-                // TODO: handle support flags.
-                unimplemented!();
+            let context = context.clone();
+            let in_sync = in_sync.clone();
+            let addr = addr.clone();
+
+            move |response: Section| {
+                let response: Result<SupportFlagsResponse, _> = from_section(response);
+                match response {
+                    Ok(response) => {
+                        in_sync.on_support_flags(response.support_flags);
+                    }
+                    Err(e) => {
+                        warn!("Disconnecting from peer {} due to bad `SupportFlagsResponse`: {}.",
+                              addr,
+                              e);
+                        Context::close(context.clone(), &addr);
+                    }
+                }
             }
         });
 
@@ -339,28 +343,27 @@ impl Context {
         let mut io_handler = IoHandler::with_capacity(12);
 
         io_handler.add_invokation::<Handshake, _>({
-                                                      let context = context.clone();
-                                                      move |addr: SocketAddr,
-                                                            request: Section|
-                                                            -> Result<Option<Section>, i32> {
-                                                          from_section(request)
+          let context = context.clone();
+          move |addr: SocketAddr,
+                request: Section|
+                -> Result<Option<Section>, i32> {
+              from_section(request)
                     .map_err(|_| -1)
                     .map(|request: HandshakeRequest| {
                         Context::on_handshake(context.clone(), addr, request)
                             .map(|res| to_section(&res).unwrap())
                     })
-                                                      }
-                                                  });
+            }
+        });
 
         io_handler.add_invokation::<Ping, _>({
-                                                 let context = context.clone();
-                                                 move |_: SocketAddr,
-                                                       _: Section|
-                                                       -> Result<Option<Section>, i32> {
-                                                     let res = Context::on_ping(context.clone());
-                                                     Ok(Some(to_section(&res).unwrap()))
-                                                 }
-                                             });
+            let context = context.clone();
+             move |_: SocketAddr, _: Section|
+                   -> Result<Option<Section>, i32> {
+                 let res = Context::on_ping(context.clone());
+                 Ok(Some(to_section(&res).unwrap()))
+             }
+        });
 
         io_handler.add_invokation::<RequestSupportFlags, _>({
             move |_: SocketAddr, _: Section| -> Result<Option<Section>, i32> {
@@ -370,22 +373,20 @@ impl Context {
         });
 
         io_handler.add_invokation::<TimedSync, _>({
-                                                      let context = context.clone();
-                                                      move |addr: SocketAddr,
-                                                            request: Section|
-                                                            -> Result<Option<Section>, i32> {
-                                                          from_section(request)
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| -> Result<Option<Section>, i32> {
+                from_section(request)
                     .map(|request: TimedSyncRequest| {
                         let res = Context::on_timed_sync(context.clone(), addr, request);
                         Some(to_section(&res).unwrap())
                     })
                     .map_err(|_| -1)
-                                                      }
-                                                  });
+            }
+        });
 
         io_handler.add_notification::<NewBlock, _>({
-                                                       let context = context.clone();
-                                                       move |addr: SocketAddr, request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -396,12 +397,11 @@ impl Context {
                         .on_new_block(&req);
                 }
             }
-                                                   });
+        });
 
         io_handler.add_notification::<NewFluffyBlock, _>({
-                                                             let context = context.clone();
-                                                             move |addr: SocketAddr,
-                                                                   request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -412,12 +412,11 @@ impl Context {
                         .on_new_fluffy_block(&req);
                 }
             }
-                                                         });
+        });
 
         io_handler.add_notification::<NewTransactions, _>({
-                                                              let context = context.clone();
-                                                              move |addr: SocketAddr,
-                                                                    request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -427,12 +426,11 @@ impl Context {
                         .on_new_transactions(&req);
                 }
             }
-                                                          });
+        });
 
         io_handler.add_notification::<RequestChain, _>({
-                                                           let context = context.clone();
-                                                           move |addr: SocketAddr,
-                                                                 request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -443,12 +441,11 @@ impl Context {
                         .on_request_chain(&req);
                 }
             }
-                                                       });
+        });
 
         io_handler.add_notification::<RequestFluffyMissingTx, _>({
-                                                                     let context = context.clone();
-                                                                     move |addr: SocketAddr,
-                                                                           request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -459,12 +456,11 @@ impl Context {
                         .on_request_fluffy_missing_tx(&req);
                 }
             }
-                                                                 });
+        });
 
         io_handler.add_notification::<RequestGetObjects, _>({
-                                                                let context = context.clone();
-                                                                move |addr: SocketAddr,
-                                                                      request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -475,12 +471,11 @@ impl Context {
                         .on_request_get_objects(&req);
                 }
             }
-                                                            });
+        });
 
         io_handler.add_notification::<ResponseChainEntry, _>({
-                                                                 let context = context.clone();
-                                                                 move |addr: SocketAddr,
-                                                                       request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -491,12 +486,11 @@ impl Context {
                         .on_response_chain_entry(&req);
                 }
             }
-                                                             });
+        });
 
         io_handler.add_notification::<ResponseGetObjects, _>({
-                                                                 let context = context.clone();
-                                                                 move |addr: SocketAddr,
-                                                                       request: Section| {
+            let context = context.clone();
+            move |addr: SocketAddr, request: Section| {
                 if let Ok(req) = from_section(request) {
                     context
                         .inbound_sync_connections
@@ -507,7 +501,7 @@ impl Context {
                         .on_response_get_objects(&req);
                 }
             }
-                                                             });
+        });
 
         io_handler.to_ref()
     }

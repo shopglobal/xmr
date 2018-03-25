@@ -28,16 +28,13 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#pragma once
+#ifndef _INT_UTIL_
+#define _INT_UTIL_
 
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-
-#ifndef _MSC_VER
-#include <sys/param.h>
-#endif
 
 #if defined(__ANDROID__)
 #include <byteswap.h>
@@ -215,6 +212,21 @@ static inline void memcpy_swap64(void *dst, const void *src, size_t n) {
 # define BYTE_ORDER	LITTLE_ENDIAN
 #endif
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+# define LITTLE_ENDIAN	1234
+# define BIG_ENDIAN	4321
+# define BYTE_ORDER	LITTLE_ENDIAN
+#endif
+
+#ifdef __linux__
+#include <endian.h>
+
+# define LITTLE_ENDIAN	__LITTLE_ENDIAN
+# define BIG_ENDIAN	__BIG_ENDIAN
+# define PDP_ENDIAN	__PDP_ENDIAN
+# define BYTE_ORDER	__BYTE_ORDER
+#endif
+
 #if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
 static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
 #endif
@@ -255,4 +267,6 @@ static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not e
 #define mem_inplace_swap64le mem_inplace_swap64
 #define memcpy_swap64be memcpy_ident64
 #define memcpy_swap64le memcpy_swap64
+#endif
+
 #endif
